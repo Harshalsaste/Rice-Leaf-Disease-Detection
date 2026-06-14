@@ -1,0 +1,172 @@
+
+### 1. Importing Libraries
+```python
+# Data Handling & Visualization
+import numpy as np          # Numerical operations
+import pandas as pd          # Data handling (Reports)
+import matplotlib.pyplot as plt   # Plotting graphs
+import seaborn as sns  # Enhanced visualizations
+import warnings
+warnings.filterwarnings('ignore')
+
+import tensorflow as tf
+from tensorflow.keras import models
+from tensorflow.keras import layers
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout
+from tensorflow.keras.applications import MobileNetV2
+from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
+from tensorflow.keras.callbacks import EarlyStopping
+from sklearn.metrics import classification_report, confusion_matrix
+```
+****
+
+### 2. Dataset Loading and Exploration
+```python
+IMAGE_SIZE = 255
+BATCH_SIZE = 16
+CHANNEL = 3
+EPOCHS = 20
+
+# Use forward slashes OR raw string to avoid unicode errors
+dataset_path = r"C:/Users/Excel/Desktop/RiceLeaf"
+
+# Load Dataset
+dataset = tf.keras.preprocessing.image_dataset_from_directory(
+    dataset_path,
+    label_mode='int',
+    image_size=(IMAGE_SIZE, IMAGE_SIZE),
+    batch_size=BATCH_SIZE,
+    shuffle=True,
+    seed=123
+)
+
+class_names = dataset.class_names
+print("Classes:", class_names)
+
+# Inspecting a batch
+for image, label in dataset.take(1):
+    print("Image Shape :-", image.shape)
+    print("Single Image :-", image)
+    print("Label Batch (numpy):", label.numpy())
+```
+****
+
+### 3. Data Splitting and Preprocessing
+```python
+# Split Dataset (70/20/10 split)
+total_batches = len(dataset)
+train_size = max(1, int(total_batches * 0.70))
+val_size = max(1, int(total_batches * 0.20))
+test_size = max(1, total_batches - train_size - val_size)
+
+train_ds = dataset.take(train_size)
+val_ds = dataset.skip(train_size).take(val_size)
+test_ds = dataset.skip(train_size + val_size).take(test_size)
+
+# Optimization (Caching and Prefetching)
+train_ds = train_ds.cache().shuffle(1000).prefetch(buffer_size=tf.data.AUTOTUNE)
+val_ds = val_ds.cache().prefetch(buffer_size=tf.data.AUTOTUNE)
+test_ds = test_ds.cache().prefetch(buffer_size=tf.data.AUTOTUNE)
+
+# Resizing and Rescaling Layers
+resize_and_rescale = tf.keras.Sequential([
+    layers.Resizing(IMAGE_SIZE, IMAGE_SIZE),
+    layers.Rescaling(1./255),
+])
+
+# Data Augmentation
+data_augmentation = tf.keras.Sequential([
+    layers.RandomFlip("horizontal_and_vertical"),
+    layers.RandomRotation(0.2),
+    layers.RandomZoom(0.1)
+])
+
+# Applying Augmentation to Training set
+train_ds = train_ds.map(
+    lambda x, y: (data_augmentation(x, training=True), y)
+).prefetch(buffer_size=tf.data.AUTOTUNE)
+```
+****
+
+### 4. Model Architecture and Training
+```python
+n_classes = 3
+
+model = models.Sequential([
+    layers.InputLayer(input_shape=(IMAGE_SIZE, IMAGE_SIZE, CHANNEL)),
+    resize_and_rescale,
+    layers.Conv2D(32, kernel_size=(3, 3), activation='relu'),
+    layers.MaxPooling2D((2, 2)),
+    layers.Conv2D(64, kernel_size=(3, 3), activation='relu'),
+    layers.MaxPooling2D((2, 2)),
+    layers.Conv2D(64, kernel_size=(3, 3), activation='relu'),
+    layers.MaxPooling2D((2, 2)),
+    layers.Conv2D(64, kernel_size=(3, 3), activation='relu'),
+    layers.MaxPooling2D((2, 2)),
+    layers.Conv2D(64, kernel_size=(3, 3), activation='relu'),
+    layers.MaxPooling2D((2, 2)),
+    layers.Conv2D(64, kernel_size=(3, 3), activation='relu'),
+    layers.MaxPooling2D((2, 2)),
+    layers.Flatten(),
+    layers.Dense(64, activation='relu'),
+    layers.Dense(n_classes, activation='softmax'),
+])
+
+model.compile(
+    optimizer='adam',
+    loss='sparse_categorical_crossentropy',
+    metrics=['accuracy']
+)
+
+history = model.fit(
+    train_ds,
+    validation_data=val_ds,
+    epochs=85
+)
+```
+****
+
+### 5. Evaluation and Visualization
+```python
+# Evaluate on test set
+scores = model.evaluate(test_ds)
+
+# Plotting Accuracy and Loss
+acc = history.history['accuracy']
+val_acc = history.history.get('val_accuracy')
+loss = history.history['loss']
+val_loss = history.history.get('val_loss')
+epochs_range = range(len(acc))
+
+plt.figure(figsize=(12, 6))
+plt.subplot(1, 2, 1)
+plt.plot(epochs_range, acc, label='Training Accuracy')
+if val_acc:
+    plt.plot(epochs_range, val_acc, label='Validation Accuracy')
+plt.title('Training and Validation Accuracy')
+
+plt.subplot(1, 2, 2)
+plt.plot(epochs_range, loss, label='Training Loss')
+if val_loss:
+    plt.plot(epochs_range, val_loss, label='Validation Loss')
+plt.title('Training and Validation Loss')
+plt.show()
+```
+****
+
+### 6. Inference and Model Saving
+```python
+def predict(model, img):
+    img = tf.image.resize(img, (IMAGE_SIZE, IMAGE_SIZE))
+    img_array = tf.expand_dims(img, 0)
+    predictions = model.predict(img_array)
+    predicted_class = class_names[np.argmax(predictions)]
+    confidence = round(100 * np.max(predictions), 2)
+    return predicted_class, confidence
+
+# Save the model
+model.save("Plant_leaf_diseases_detection_model.h5")
+```
+****
